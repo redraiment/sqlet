@@ -1,4 +1,5 @@
 (ns me.zzp.sqlet.db
+  "A lightweight wrapper to H2 SQL databases via JDBC."
   (:require [clojure.string :as cs]
             [me.zzp.sqlet
              [file :refer [mktempdir]]
@@ -9,27 +10,28 @@
   (:gen-class))
 
 (def default-url
-  "默认的公共数据库URL"
+  "URL of global shared database. For application and session scope attributes."
   (atom nil))
 
 (def ^:dynamic *connection*
-  "当前数据库对象"
+  "Current database connection"
   nil)
 
 (defn with-connection
-  "连接信息上下文"
+  "Bind `*connection*` to the connection of specified `URL`, then invoke the
+  `callback`, and close automatically at the end."
   [url callback]
   (with-open [connection (DriverManager/getConnection url)]
     (binding [*connection* connection]
       (callback))))
 
 (defmacro sandbox
-  "沙盒"
+  "Create new in-memory database (sandbox) for each HTTP request."
   [& body]
   `(with-connection "jdbc:h2:mem:" (bound-fn [] ~@body)))
 
 (defn- with-statement
-  "语句上下文"
+  "Get or create DB connection, and invoke `callback` with prepared statement."
   [sql parameters callback]
   (if *connection*
     (with-open [statement (.prepareStatement *connection* sql)]
@@ -44,38 +46,41 @@
 ;;; query
 
 (defn all
-  "返回查询结果"
+  "Executes the given SQL statement, which returns a list of hashmap for result
+  records."
   [sql & parameters]
   (with-statement sql parameters
     #(with-open [rs (.getResultSet %)]
        (doall (resultset-seq rs)))))
 
 (defn one
-  "返回第一行结果"
+  "Executes the given SQL statement, which returns a hashmap for the first row."
   [sql & parameters]
   (first (apply all sql parameters)))
 
 (defn value
-  "返回第一行第一列结果"
+  "Executes the given SQL statement, which returns a value for the first column
+  of the first row."
   [sql & parameters]
   (second (first (apply one sql parameters))))
 
 ;;; update
 
 (defn execute
-  "执行更新语句"
+  "Executes the given SQL statement, which may be an INSERT, UPDATE, or DELETE
+  statement or an SQL statement that returns nothing, such as an SQL DDL statement."
   [sql & parameters]
   (with-statement sql parameters (memfn getUpdateCount)))
 
 (defn runscript
-  "runscript from <filename>"
+  "Short for `runscript from <filename>`"
   [filename]
   (execute "runscript from ?" filename))
 
 ;;; launcher
 
 (defn start
-  "启动公共H2数据库服务器"
+  "Start global shared H2 tcp server."
   []
   (let [dir (mktempdir "sqlet")
         options (into-array String ["-tcp" "-baseDir" dir])

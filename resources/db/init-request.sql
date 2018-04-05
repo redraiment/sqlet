@@ -50,6 +50,7 @@ create table response.headers (
 create table response.cookies (
   name varchar(2048) primary key,
   value varchar(2048) not null default '',
+  path varchar(2048),
   domain varchar(2048),
   max_age bigint,
   expires varchar(128),
